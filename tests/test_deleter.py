@@ -84,6 +84,25 @@ def test_snowflake():
     assert sn.isdigit() and int(sn) > 0
 
 
+def test_reply_is_deletable():
+    # A reply (type 19) must be deleted, not skipped as a "system" message.
+    d = MessageDeleter(opts())
+    responses = iter([search(1, [msg(1, type=19)]), (204, None)])
+    d._request = lambda method, url: next(responses)
+    stats = d.run()
+    assert stats.deleted == 1
+    assert stats.failed == 0
+
+
+def test_system_message_skipped():
+    # A genuine system message (e.g. type 7 USER_JOIN) is not deletable.
+    d = MessageDeleter(opts())
+    responses = iter([search(1, [msg(1, type=7)]), search(1, [])])
+    d._request = lambda method, url: next(responses)
+    stats = d.run()
+    assert stats.deleted == 0
+
+
 def test_pinned_filter():
     # A pinned, non-default-type message is only deletable with include_pinned.
     d = MessageDeleter(opts())

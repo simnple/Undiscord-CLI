@@ -29,9 +29,13 @@ from typing import Callable, Optional
 # 2015-01-01T00:00:00Z, the epoch Discord snowflakes count from.
 DISCORD_EPOCH_MS = 1420070400000
 
-# Message types the userscript considers deletable:
-#   0 = DEFAULT, 6 = CHANNEL_PINNED_MESSAGE
-DELETABLE_TYPES = {0, 6}
+# Message types we treat as deletable user content:
+#   0  = DEFAULT
+#   6  = CHANNEL_PINNED_MESSAGE (the "pinned a message" notice)
+#   19 = REPLY  -- a normal message that replies to another. The original
+#        userscript only allowed {0, 6}, so REPLY messages were wrongly skipped
+#        (counted as "system") and left behind. They are ordinary, deletable.
+DELETABLE_TYPES = {0, 6, 19}
 
 DEFAULT_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
