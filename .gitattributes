@@ -1,0 +1,4 @@
+# Normalize line endings: store as LF in the repo, avoid CRLF churn.
+* text=auto eol=lf
+*.js text eol=lf
+*.py text eol=lf

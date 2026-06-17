@@ -1,0 +1,44 @@
+# undiscord-cli configuration (TOML)
+#
+# Copy this to `config.toml` and fill in your values, then run:
+#     python -m undiscord --config config.toml --dry-run
+#
+# Any value here can be overridden on the command line.
+# DO NOT commit a config file containing your real token.
+
+# --- authentication -------------------------------------------------------- #
+# Your Discord user token. Prefer the DISCORD_TOKEN environment variable or
+# `token_file` over putting the raw token here.
+# token = "your-token-here"
+# token_file = "token.txt"
+
+# Only delete messages authored by this user id (usually your own).
+# author_id = "000000000000000000"
+
+# --- location -------------------------------------------------------------- #
+# Server (guild) id, or "@me" for DMs / group DMs.
+guild_id = "@me"
+
+# One channel id, or a comma-separated list, or a TOML array.
+# channel_id = "111111111111111111"
+# channel_id = ["111111111111111111", "222222222222222222"]
+
+# --- range filters --------------------------------------------------------- #
+# min_id   = "000000000000000000"   # only messages after this id
+# max_id   = "999999999999999999"   # only messages before this id
+# min_date = "2023-01-01T00:00"     # only messages after this date
+# max_date = "2024-01-01T00:00"     # only messages before this date
+
+# --- search filters -------------------------------------------------------- #
+# content = "text to match"
+# has_link = false
+# has_file = false
+# include_nsfw = false
+# include_pinned = false
+
+# --- behavior -------------------------------------------------------------- #
+# api_version = 9
+# delay_min = 1000   # min delay between deletes (ms)
+# delay_max = 2000   # max delay between deletes (ms)
+# user_agent = "Mozilla/5.0 ..."
+# redact = false

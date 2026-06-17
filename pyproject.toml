@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "undiscord-cli"
+version = "0.2.0"
+description = "Mass-delete your own Discord messages from the command line (a CLI port of the deletediscordmessages userscript)."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+keywords = ["discord", "cli", "messages", "delete", "undiscord"]
+dependencies = []
+
+[project.urls]
+# Uncomment and set to your repo once it's pushed:
+# Homepage = "https://github.com/<your-username>/Undiscord-CLI"
+Upstream = "https://github.com/gen3vra/deletediscordmessages"
+
+[project.scripts]
+undiscord-cli = "undiscord.cli:main"
+
+[tool.setuptools]
+packages = ["undiscord"]
