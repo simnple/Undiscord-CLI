@@ -42,3 +42,4 @@ guild_id = "@me"
 # delay_max = 2000   # max delay between deletes (ms)
 # user_agent = "Mozilla/5.0 ..."
 # redact = false
+# max_passes = 5     # auto re-run passes to sweep up index-lag leftovers

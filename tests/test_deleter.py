@@ -32,7 +32,12 @@ def search(total, msgs):
 
 def test_happy():
     d = MessageDeleter(opts())
-    responses = iter([search(2, [msg(1), msg(2)]), (204, None), (204, None)])
+    responses = iter([
+        search(2, [msg(1), msg(2)]),  # pass 1 deletes both
+        (204, None),
+        (204, None),
+        search(0, []),                # pass 2 (convergence): nothing left
+    ])
     d._request = lambda method, url: next(responses)
     stats = d.run()
     assert stats.deleted == 2
@@ -41,7 +46,12 @@ def test_happy():
 
 def test_rate_limit():
     d = MessageDeleter(opts())
-    responses = iter([search(1, [msg(1)]), (429, {"retry_after": 1}), (204, None)])
+    responses = iter([
+        search(1, [msg(1)]),
+        (429, {"retry_after": 1}),
+        (204, None),
+        search(0, []),                 # pass 2 (convergence): nothing left
+    ])
     d._request = lambda method, url: next(responses)
     stats = d.run()
     assert stats.deleted == 1
@@ -78,6 +88,63 @@ def test_dry_run():
     assert stats.deleted == 2
 
 
+def test_convergence_automatic_rerun():
+    # Discord's search index lags: pass 1 only "sees" 2 of 3 messages (the third
+    # wasn't indexed in that snapshot). The fix re-runs the walk automatically
+    # so the straggler gets deleted in pass 2, and stops once a pass deletes
+    # nothing (pass 3) instead of making the user re-run manually.
+    searches = iter([
+        search(2, [msg(1), msg(2)]),   # pass 1: index snapshot misses msg(3)
+        search(1, [msg(3)]),           # pass 2: straggler now indexed
+        search(0, []),                 # pass 3: nothing left -> converge
+    ])
+    deletes = {"count": 0}
+
+    def req(method, url):
+        if method == "DELETE":
+            deletes["count"] += 1
+            return (204, None)
+        return next(searches)
+
+    d = MessageDeleter(opts(max_passes=5))
+    d._request = req
+    stats = d.run()
+    assert stats.deleted == 3
+    assert deletes["count"] == 3
+
+
+def test_convergence_stops_when_no_progress():
+    # If a pass deletes nothing new (only system/undeletable messages are left),
+    # the tool must not loop forever — it converges after the first full pass.
+    d = MessageDeleter(opts(max_passes=5))
+    responses = iter([search(1, [msg(1, type=7)]), search(1, [])])
+    d._request = lambda method, url: next(responses)
+    stats = d.run()
+    assert stats.deleted == 0
+
+
+def test_max_passes_cap():
+    # Even if every pass finds new messages, the run respects the max_passes cap.
+    # Each pass deletes 1 message it "just became aware of".
+    pages = [
+        search(1, [msg(1)]),
+        search(1, [msg(2)]),
+        search(1, [msg(3)]),
+    ]
+    searches = iter(pages)
+
+    def req(method, url):
+        if method == "DELETE":
+            return (204, None)
+        return next(searches)
+
+    d = MessageDeleter(opts(max_passes=2))
+    d._request = req
+    stats = d.run()
+    # pass 1 deletes msg(1); pass 2 deletes msg(2); cap reached -> stops.
+    assert stats.deleted == 2
+
+
 def test_snowflake():
     assert to_snowflake("123456789") == "123456789"
     sn = to_snowflake("2023-01-01T00:00")
@@ -87,7 +154,11 @@ def test_snowflake():
 def test_reply_is_deletable():
     # A reply (type 19) must be deleted, not skipped as a "system" message.
     d = MessageDeleter(opts())
-    responses = iter([search(1, [msg(1, type=19)]), (204, None)])
+    responses = iter([
+        search(1, [msg(1, type=19)]),
+        (204, None),
+        search(0, []),   # pass 2 (convergence): nothing left
+    ])
     d._request = lambda method, url: next(responses)
     stats = d.run()
     assert stats.deleted == 1
@@ -112,7 +183,11 @@ def test_pinned_filter():
     assert stats.deleted == 0  # not deleted: not type 0/6 and include_pinned=False
 
     d2 = MessageDeleter(opts(include_pinned=True))
-    responses2 = iter([search(1, [msg(1, type=21, pinned=True)]), (204, None)])
+    responses2 = iter([
+        search(1, [msg(1, type=21, pinned=True)]),
+        (204, None),
+        search(0, []),   # pass 2 (convergence): nothing left
+    ])
     d2._request = lambda method, url: next(responses2)
     stats2 = d2.run()
     assert stats2.deleted == 1

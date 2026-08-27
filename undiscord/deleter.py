@@ -169,6 +169,12 @@ class DeleteOptions:
     delay_max_ms: int = 2000
     request_timeout: float = 30.0
     network_retries: int = 3
+    # Discord's search index is eventually consistent: when messages are deleted
+    # the results shift asynchronously, so a single search/delete walk can leave
+    # stragglers behind. The run automatically repeats the walk (a "pass") until
+    # a full pass deletes nothing new, up to max_passes. Set to 1 to restore the
+    # old single-pass behaviour (you'd then have to re-run manually).
+    max_passes: int = 5
 
 
 @dataclass
@@ -348,11 +354,46 @@ class MessageDeleter:
             self._log("warn", "DRY RUN - searching only, no messages will be deleted.")
         self._progress(0, 1)
 
-        while not self.ended:
-            if not self._step():
+        # Run one full search/delete walk ("pass") at a time. Because Discord's
+        # search index updates asynchronously, deleting messages can leave a few
+        # behind for the next search to find. Keep going until a full pass
+        # either deletes nothing new (converged) or hits the max-passes cap.
+        max_passes = max(1, o.max_passes)
+        pass_count = 0
+        while pass_count < max_passes:
+            pass_count += 1
+            self._begin_pass()  # resets offset, pass counters and ended=False
+            while not self.ended:
+                if not self._step():
+                    break
+            # The walk for this pass has finished. Decide whether to run another.
+            if self.stopped or self.aborted:
                 break
+            made_progress = self.pass_deleted > 0
+            if not made_progress:
+                break  # nothing more this index snapshot could yield
+            if pass_count < max_passes:
+                self._log(
+                    "info",
+                    f"Discord's search index may not have caught up yet; "
+                    f"starting another pass ({pass_count + 1}/{max_passes})...",
+                )
 
         return self._build_stats()
+
+    def _begin_pass(self) -> None:
+        """Start a fresh single search/delete walk over Discord's current index.
+
+        Keeps the running totals (`del_count`/`fail_count`/...) intact for the
+        final summary, but resets the per-pass bookkeeping so a later pass can
+        complete independently of earlier ones (Discord's index changes between
+        passes as messages are removed).
+        """
+        self.offset = 0
+        self.pass_deleted = 0
+        self.pass_failed = 0
+        self.pass_total: Optional[int] = None
+        self.ended = False
 
     def _build_stats(self) -> DeleteStats:
         return DeleteStats(
@@ -386,7 +427,10 @@ class MessageDeleter:
         return False  # returning False tells run()'s loop to stop
 
     def _is_run_complete(self) -> bool:
-        return self.grand_total is not None and (self.del_count + self.fail_count) >= self.grand_total
+        # Completion is judged per-pass: this pass has swept as much as this
+        # snapshot of Discord's index currently exposes. (The running totals are
+        # deliberately not used here — they reflect every pass and only grow.)
+        return self.pass_total is not None and (self.pass_deleted + self.pass_failed) >= self.pass_total
 
     # One iteration: search a page, then delete what's on it. Returns True to
     # keep looping, False to stop.
@@ -439,6 +483,8 @@ class MessageDeleter:
         total = body.get("total_results", 0)
         if self.grand_total is None:
             self.grand_total = total
+        if self.pass_total is None:
+            self.pass_total = total
 
         discovered = []
         for convo in body.get("messages", []):
@@ -455,6 +501,7 @@ class MessageDeleter:
         delete_ids = {m["id"] for m in to_delete}
         skipped = [m for m in discovered if m["id"] not in delete_ids]
         self.fail_count += len(skipped)
+        self.pass_failed += len(skipped)
         archived_count = sum(1 for m in skipped if m.get("channel_id") in self.archived_threads)
         system_count = len(skipped) - archived_count
         self.archived_skip_count += archived_count
@@ -480,6 +527,7 @@ class MessageDeleter:
             for m in to_delete:
                 self._log_planned(m)
             self.del_count += len(to_delete)
+            self.pass_deleted += len(to_delete)
             self._progress(self.del_count, self.grand_total or 1)
             self.offset += len(discovered) if discovered else 25
             if self.offset >= total:
@@ -584,6 +632,7 @@ class MessageDeleter:
             except urllib.error.URLError as err:
                 self._log("error", "Delete request failed (network):", str(err))
                 self.fail_count += 1
+                self.pass_failed += 1
                 if i < n - 1:
                     self._wait(self.delete_delay)
                 i += 1
@@ -605,6 +654,7 @@ class MessageDeleter:
         self.fail_in_row = 0
         self.success_in_row += 1
         self.del_count += 1
+        self.pass_deleted += 1
         self._progress(self.del_count, self.grand_total or 1)
         if self.randomize_delay:
             self.delete_default = self._rand_delay()
@@ -665,6 +715,7 @@ class MessageDeleter:
 
         self._log("error", f"Error deleting message, API responded with status {status}!", err)
         self.fail_count += 1
+        self.pass_failed += 1
         return True
 
 

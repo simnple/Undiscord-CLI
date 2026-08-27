@@ -206,6 +206,10 @@ def build_parser() -> argparse.ArgumentParser:
     beh.add_argument("--user-agent", help="override the HTTP User-Agent")
     beh.add_argument("--delay-min", type=int, default=None, help="min delay between deletes, ms (default 1000)")
     beh.add_argument("--delay-max", type=int, default=None, help="max delay between deletes, ms (default 2000)")
+    beh.add_argument("--max-passes", type=int, default=None,
+                     help="re-run the search/delete walk up to this many times so leftover "
+                          "messages (Discord's search index lags) are caught automatically "
+                          "(default 5; set to 1 to require manual re-runs)")
 
     out = p.add_argument_group("output")
     out.add_argument("-v", "--verbose", action="store_true", help="show verbose/debug logging")
@@ -409,6 +413,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         api_version=api_version,
         delay_min_ms=int(_pick(args.delay_min, cfg, "delay_min", 1000)),
         delay_max_ms=int(_pick(args.delay_max, cfg, "delay_max", 2000)),
+        max_passes=int(_pick(args.max_passes, cfg, "max_passes", 5)),
     )
     if user_agent:
         base_opts["user_agent"] = user_agent

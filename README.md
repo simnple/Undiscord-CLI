@@ -147,6 +147,7 @@ Run `python -m undiscord --help` for the full list. Highlights:
 | `--dry-run` | Search and report only; delete nothing |
 | `-y, --yes` | Skip the confirmation prompt |
 | `--delay-min` / `--delay-max` | Delay between deletes, ms (default 1000–2000) |
+| `--max-passes` | Auto re-run search/delete passes to sweep up index-lag leftovers (default 5; `1` = manual re-runs) |
 | `--api-version` | Discord API version (default 9) |
 | `-v, --verbose` / `-q, --quiet` | More / less logging |
 | `--redact` | Hide message content in logs (for screenshots) |
@@ -217,6 +218,19 @@ The browser userscript scrapes these for you; on the CLI you supply them:
   enumeration (`--all*`), and looping over multiple targets.
 - Tests live in [`tests/`](tests/) and run offline (no network):
   `python -m pytest` or `python tests/test_deleter.py`.
+
+### Why a run sometimes finishes with messages left over
+
+Discord's search index is **eventually consistent**: when you delete a message,
+it takes a moment (and a re-search) to drop out of search results. Because the
+undo walk paginates through a snapshot of that index, a few messages can slip
+past the end of a single walk. Rather than force you to re-run the tool, the CLI
+now **automatically repeats the walk** ("passes") until a full pass deletes
+nothing new, up to `--max-passes` (default `5`). Each new pass re-searches from
+the start of the channel/server, so messages the index only "saw" after a
+delete get caught without hands-on re-runs. Set `--max-passes 1` to restore the
+old single-pass behaviour. The per-target summary still reports the total
+deleted across all passes.
 
 ## Credits
 
